@@ -122,7 +122,7 @@ val_loader   = load_dataset(valid_data_path, valid_lbl_path,
                             cfg_tr.test_batch_size, shuffle=False)
 
 # model, optimizer, scheduler, loss
-device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # remove if only GPU
 model     = RibonanzaNet(cfg_pw).to(device)
 optimizer = optim.AdamW(model.parameters(),
                         lr=cfg_tr.learning_rate,
