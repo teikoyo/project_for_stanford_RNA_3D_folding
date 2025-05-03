@@ -21,8 +21,7 @@ def process(label_path, seq_path, out_label_path, out_seq_path, length_limit=256
     sequences['invalid_flag'] = sequences['sequence'].str.contains(r'[-X]')
 
     # aggregate missing info per sequence
-    missing = labels.groupby('seq_id', sort=False)['missing_flag'] \
-                    .any().reset_index(name='has_missing')
+    missing = labels.groupby('seq_id', sort=False)['missing_flag']                     .any().reset_index(name='has_missing')
 
     # merge stats and decide drops
     stats = sequences[['seq_id','length','invalid_flag']].merge(missing, on='seq_id', how='left')
@@ -35,10 +34,8 @@ def process(label_path, seq_path, out_label_path, out_seq_path, length_limit=256
     ]
 
     # filter out unwanted entries
-    clean_labels = labels.loc[~labels['seq_id'].isin(drop_ids)] \
-                        .drop(columns=['seq_id','missing_flag'])
-    clean_seqs   = sequences.loc[~sequences['seq_id'].isin(drop_ids)] \
-                         .drop(columns=['seq_id','length','invalid_flag'])
+    clean_labels = labels.loc[~labels['seq_id'].isin(drop_ids)]                        .drop(columns=['seq_id','missing_flag'])
+    clean_seqs   = sequences.loc[~sequences['seq_id'].isin(drop_ids)]                          .drop(columns=['seq_id','length','invalid_flag'])
 
     # save cleaned files
     clean_labels.to_csv(out_label_path, index=False)
