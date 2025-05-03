@@ -10,7 +10,8 @@ k: 5 #not used
 ninp: 384
 nlayers: 48
 nclass: 3
-ntoken: 6 #AUGC + padding/N token
+# ntoken: 6 #AUGC + padding/N token
+ntoken: 5 #AUGC + padding/N token
 nhead: 12
 #use_bpp: False
 use_flip_aug: false

@@ -12,13 +12,13 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from argparse import Namespace
 
-# determine project root and add to path
+# determine project root and add to Python path
 script_dir   = os.path.dirname(__file__)
 project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'model'))
 
-# argument parsing
+# parse command-line arguments
 parser = argparse.ArgumentParser(description="Train RibonanzaNet model")
 parser.add_argument('--pairwise_config', type=str, default='configs/pairwise.yaml')
 parser.add_argument('--train_config',    type=str, default='configs/training.yaml')
@@ -31,7 +31,7 @@ parser.add_argument('--log_dir',         type=str, default='logs')
 parser.add_argument('--save_dir',        type=str, default='model/checkpoints')
 args = parser.parse_args()
 
-# helper to resolve relative paths
+# helper to resolve paths relative to project_root
 def abs_path(path):
     return path if os.path.isabs(path) else os.path.join(project_root, path)
 
@@ -45,33 +45,37 @@ log_dir         = abs_path(args.log_dir)
 save_dir        = abs_path(args.save_dir)
 checkpoint_path = abs_path(args.checkpoint) if args.checkpoint else None
 
-# setup logging and TensorBoard
+# set up logging and TensorBoard
 os.makedirs(log_dir, exist_ok=True)
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 writer = SummaryWriter(log_dir=log_dir)
 
-# import model
 from model.Network import RibonanzaNet
 
-# load configurations
+# load YAML configurations
 with open(pair_cfg_path)  as f: pairwise_cfg = yaml.safe_load(f)
 with open(train_cfg_path) as f: train_cfg    = yaml.safe_load(f)
 cfg_pw = Namespace(**pairwise_cfg)
 cfg_tr = Namespace(**train_cfg)
 
-# ensure model outputs 3 coordinates
+# model output dimension must match (x,y,z)
 cfg_pw.nclass = 3
+# vocabulary: 4 bases + 1 pad token
+vocab = {"A":0, "C":1, "G":2, "U":3}
+pad_id = len(vocab)  # =4
+cfg_pw.ntoken = pad_id + 1  # =5
 
-# tokenizer setup
 max_len = cfg_pw.max_len
-vocab = {"A":0, "C":1, "G":2, "U":3, "X":4, "-":5}
+
 def tokenize(seq):
-    ids = [vocab.get(ch, vocab['X']) for ch in seq]
-    ids = ids[:max_len] + [vocab['-']] * max(0, max_len - len(ids))
+    # map sequence chars to IDs and pad/truncate to max_len
+    ids = [vocab[ch] for ch in seq]
+    if len(ids) < max_len:
+        ids += [pad_id] * (max_len - len(ids))
+    else:
+        ids = ids[:max_len]
     return torch.tensor(ids, dtype=torch.long)
 
-# dataset definition
 class RNADataset(Dataset):
     def __init__(self, seqs_df, coords_dict):
         self.seqs   = seqs_df.reset_index(drop=True)
@@ -86,7 +90,6 @@ class RNADataset(Dataset):
         xyz     = self.coords[row['target_id']]
         return seq_ids, xyz
 
-# data loading helper
 def load_dataset(seq_path, label_path, batch_size, shuffle=False):
     seqs_df   = pd.read_csv(seq_path)
     labels_df = pd.read_csv(label_path)
@@ -112,9 +115,11 @@ def load_dataset(seq_path, label_path, batch_size, shuffle=False):
                          pin_memory=shuffle)
     return loader
 
-# prepare data loaders
-train_loader = load_dataset(train_data_path, train_lbl_path, cfg_tr.batch_size, shuffle=True)
-val_loader   = load_dataset(valid_data_path, valid_lbl_path, cfg_tr.test_batch_size, shuffle=False)
+# prepare DataLoaders
+train_loader = load_dataset(train_data_path, train_lbl_path,
+                            cfg_tr.batch_size, shuffle=True)
+val_loader   = load_dataset(valid_data_path, valid_lbl_path,
+                            cfg_tr.test_batch_size, shuffle=False)
 
 # model, optimizer, scheduler, loss
 device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -127,7 +132,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer,
                                       gamma=cfg_tr.lr_gamma)
 criterion = nn.MSELoss()
 
-# resume from checkpoint if provided
+# resume training if checkpoint given
 start_epoch = 1
 if checkpoint_path:
     ckpt = torch.load(checkpoint_path, map_location=device)
@@ -166,6 +171,7 @@ for epoch in range(start_epoch, cfg_tr.epochs + 1):
             src_mask = torch.ones_like(seq_ids, dtype=torch.long, device=device)
             pred = model(seq_ids, src_mask=src_mask)
             total_val += criterion(pred, coords_true).item()
+
     avg_val = total_val / len(val_loader)
     writer.add_scalar('Loss/Val', avg_val, epoch)
 
@@ -185,4 +191,3 @@ for epoch in range(start_epoch, cfg_tr.epochs + 1):
 
 writer.close()
 logging.info("Training complete.")
-# Save the final model
