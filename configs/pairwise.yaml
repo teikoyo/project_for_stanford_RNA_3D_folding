@@ -9,7 +9,7 @@ weight_decay: 0.0001
 k: 5 #not used
 ninp: 384
 nlayers: 48
-nclass: 10
+nclass: 3
 ntoken: 6 #AUGC + padding/N token
 nhead: 12
 #use_bpp: False
