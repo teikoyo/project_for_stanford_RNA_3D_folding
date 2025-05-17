@@ -11,6 +11,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from argparse import Namespace
+from torch.amp import autocast, GradScaler
 
 # determine project root and add to Python path
 script_dir   = os.path.dirname(__file__)
@@ -131,6 +132,7 @@ scheduler = optim.lr_scheduler.StepLR(optimizer,
                                       step_size=cfg_tr.lr_step,
                                       gamma=cfg_tr.lr_gamma)
 criterion = nn.MSELoss()
+scaler = GradScaler()
 
 # resume training if checkpoint given
 start_epoch = 1
@@ -149,15 +151,16 @@ for epoch in range(start_epoch, cfg_tr.epochs + 1):
     model.train()
     total_train = 0.0
     for seq_ids, coords_true in train_loader:
-        seq_ids, coords_true = seq_ids.to(device), coords_true.to(device)
-        src_mask = torch.ones_like(seq_ids, dtype=torch.long, device=device)
-
         optimizer.zero_grad()
-        pred = model(seq_ids, src_mask=src_mask)
-        loss = criterion(pred, coords_true)
-        loss.backward()
+        with autocast():
+            pred = model(seq_ids, src_mask=src_mask)
+            loss = criterion(pred, coords_true)
+        # scale the loss, do backward, unscale for grad clip, step and update scaler
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
         nn.utils.clip_grad_norm_(model.parameters(), cfg_tr.clip_grad_norm)
-        optimizer.step()
+        scaler.step(optimizer)
+        scaler.update()
         total_train += loss.item()
 
     avg_train = total_train / len(train_loader)
