@@ -18,7 +18,6 @@ project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'model'))
 
-
 parser = argparse.ArgumentParser(description="Train RibonanzaNet model")
 parser.add_argument('--pairwise_config', type=str, default='configs/pairwise.yaml')
 parser.add_argument('--train_config',    type=str, default='configs/training.yaml')
@@ -31,9 +30,7 @@ parser.add_argument('--log_dir',         type=str, default='logs')
 parser.add_argument('--save_dir',        type=str, default='model/checkpoints')
 args = parser.parse_args()
 
-
 logger.remove()
-
 logger.add(
     sys.stderr,
     level="INFO",
@@ -53,6 +50,10 @@ log_dir         = abs_path(args.log_dir)
 save_dir        = abs_path(args.save_dir)
 checkpoint_path = abs_path(args.checkpoint) if args.checkpoint else None
 
+os.makedirs(log_dir, exist_ok=True)
+os.makedirs(save_dir, exist_ok=True)
+
+# Log to file as well
 log_file = os.path.join(log_dir, "train.log")
 logger.add(
     log_file,
@@ -63,25 +64,16 @@ logger.add(
     encoding="utf-8"
 )
 
-os.makedirs(log_dir, exist_ok=True)
-os.makedirs(save_dir, exist_ok=True)
-
-# TensorBoard
 writer = SummaryWriter(log_dir=log_dir)
 
-
 from model.Network import RibonanzaNet
-
 
 with open(pair_cfg_path)  as f: pairwise_cfg = yaml.safe_load(f)
 with open(train_cfg_path) as f: train_cfg    = yaml.safe_load(f)
 cfg_pw = Namespace(**pairwise_cfg)
 cfg_tr = Namespace(**train_cfg)
 
-# enforce output dim = 3 for (x,y,z)
 cfg_pw.nclass = 3
-
-
 vocab = {"A":0, "C":1, "G":2, "U":3}
 pad_id = len(vocab)          # 4
 cfg_pw.ntoken = pad_id + 1   # 5
@@ -143,8 +135,16 @@ train_loader = load_dataset(train_data_path, train_lbl_path,
 val_loader   = load_dataset(valid_data_path, valid_lbl_path,
                             cfg_tr.test_batch_size, shuffle=False)
 
-device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model     = RibonanzaNet(cfg_pw).to(device)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# --- Here is the necessary modification for multi-GPU ---
+model = RibonanzaNet(cfg_pw)
+if torch.cuda.device_count() > 1:
+    logger.info(f"Using {torch.cuda.device_count()} GPUs via DataParallel")
+    model = nn.DataParallel(model)
+model = model.to(device)
+# ---------------------------------------------------------
+
 optimizer = optim.AdamW(
     model.parameters(),
     lr=cfg_tr.learning_rate,
@@ -158,7 +158,6 @@ scheduler = optim.lr_scheduler.StepLR(
 criterion = nn.MSELoss()
 scaler    = GradScaler()
 
-# resume if checkpoint
 start_epoch = 1
 if checkpoint_path:
     ckpt = torch.load(checkpoint_path, map_location=device)
@@ -193,7 +192,6 @@ for epoch in range(start_epoch, cfg_tr.epochs + 1):
     avg_train = total_train / len(train_loader)
     writer.add_scalar('Loss/Train', avg_train, epoch)
 
-    # validation
     model.eval()
     total_val = 0.0
     with torch.no_grad():
