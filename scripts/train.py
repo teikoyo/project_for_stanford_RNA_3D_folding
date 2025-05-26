@@ -10,7 +10,7 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from argparse import Namespace
-from torch.amp import autocast, GradScaler
+from torch.cuda.amp import autocast, GradScaler
 from loguru import logger
 
 script_dir   = os.path.dirname(__file__)
