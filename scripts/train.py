@@ -166,7 +166,7 @@ scheduler = optim.lr_scheduler.StepLR(
     gamma=cfg_tr.lr_gamma
 )
 criterion = nn.MSELoss()
-scaler    = GradScaler(device_type='cuda')
+scaler = GradScaler('cuda')
 
 # resume from checkpoint
 start_epoch = 1
@@ -189,7 +189,7 @@ for epoch in range(start_epoch, cfg_tr.epochs + 1):
         src_mask = torch.ones_like(seq_ids, dtype=torch.long, device=device)
 
         optimizer.zero_grad()
-        with autocast(device_type='cuda', dtype=torch.float16):
+        with autocast('cuda'):
             pred = model(seq_ids, src_mask=src_mask)
             loss = criterion(pred, coords_true)
 
