@@ -32,14 +32,22 @@ parser.add_argument('--save_dir',        type=str, default='model/checkpoints')
 args = parser.parse_args()
 
 
-logger.remove()  # Remove default logger
+logger.remove()
+
 logger.add(
-    sink=sys.stderr,
+    sys.stderr,
     level="INFO",
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}",
-    encoding="utf-8"
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}"
 )
 
+log_file = os.path.join(log_dir, "train.log")
+logger.add(
+    log_file,
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+    rotation="10 MB",
+    enqueue=True,
+    encoding="utf-8"
 
 def abs_path(path: str) -> str:
     return path if os.path.isabs(path) else os.path.join(project_root, path)

@@ -1,0 +1,6 @@
+usage: train.py [-h] [--pairwise_config PAIRWISE_CONFIG]
+                [--train_config TRAIN_CONFIG] [--train_data TRAIN_DATA]
+                [--train_labels TRAIN_LABELS] [--valid_data VALID_DATA]
+                [--valid_labels VALID_LABELS] [--checkpoint CHECKPOINT]
+                [--log_dir LOG_DIR] [--save_dir SAVE_DIR]
+train.py: error: unrecognized arguments: logs/exp1/train.log
