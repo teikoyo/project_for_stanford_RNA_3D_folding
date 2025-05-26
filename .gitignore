@@ -4,6 +4,6 @@ __pycache__/
 *.ipynb
 data/*.csv
 data/raw/
-*.txt
+
 logs/
 *.log
