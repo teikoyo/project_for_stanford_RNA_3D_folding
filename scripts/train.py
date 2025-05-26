@@ -40,16 +40,6 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}"
 )
 
-log_file = os.path.join(log_dir, "train.log")
-logger.add(
-    log_file,
-    level="INFO",
-    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
-    rotation="10 MB",
-    enqueue=True,
-    encoding="utf-8"
-)
-
 def abs_path(path: str) -> str:
     return path if os.path.isabs(path) else os.path.join(project_root, path)
 
@@ -62,6 +52,16 @@ valid_lbl_path  = abs_path(args.valid_labels)
 log_dir         = abs_path(args.log_dir)
 save_dir        = abs_path(args.save_dir)
 checkpoint_path = abs_path(args.checkpoint) if args.checkpoint else None
+
+log_file = os.path.join(log_dir, "train.log")
+logger.add(
+    log_file,
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+    rotation="10 MB",
+    enqueue=True,
+    encoding="utf-8"
+)
 
 os.makedirs(log_dir, exist_ok=True)
 os.makedirs(save_dir, exist_ok=True)
