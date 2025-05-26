@@ -48,6 +48,7 @@ logger.add(
     rotation="10 MB",
     enqueue=True,
     encoding="utf-8"
+)
 
 def abs_path(path: str) -> str:
     return path if os.path.isabs(path) else os.path.join(project_root, path)
