@@ -13,13 +13,11 @@ from argparse import Namespace
 from torch.amp import autocast, GradScaler
 from loguru import logger
 
-# determine project root and add to Python path
-script_dir   = os.path.dirname(__file__)
+script_dir = os.path.dirname(__file__)
 project_root = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'model'))
 
-# parse command-line arguments
 parser = argparse.ArgumentParser(description="Train RibonanzaNet model")
 parser.add_argument('--pairwise_config', type=str, default='configs/pairwise.yaml')
 parser.add_argument('--train_config',    type=str, default='configs/training.yaml')
@@ -32,15 +30,9 @@ parser.add_argument('--log_dir',         type=str, default='logs')
 parser.add_argument('--save_dir',        type=str, default='model/checkpoints')
 args = parser.parse_args()
 
-# configure logger
 logger.remove()
-logger.add(
-    sys.stderr,
-    level="INFO",
-    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}"
-)
+logger.add(sys.stderr, level="INFO", format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | {message}")
 
-# helper to resolve relative paths
 def abs_path(path: str) -> str:
     return path if os.path.isabs(path) else os.path.join(project_root, path)
 
@@ -57,36 +49,25 @@ checkpoint_path = abs_path(args.checkpoint) if args.checkpoint else None
 os.makedirs(log_dir, exist_ok=True)
 os.makedirs(save_dir, exist_ok=True)
 
-# also log to file
 log_file = os.path.join(log_dir, "train.log")
-logger.add(
-    log_file,
-    level="INFO",
-    format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
-    rotation="10 MB",
-    enqueue=True,
-    encoding="utf-8"
-)
+logger.add(log_file, level="INFO", format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}", rotation="10 MB", enqueue=True, encoding="utf-8")
 
-# TensorBoard writer
 writer = SummaryWriter(log_dir=log_dir)
 
-# import model
 from model.Network import RibonanzaNet
 
-# load configurations
-with open(pair_cfg_path)  as f: pairwise_cfg = yaml.safe_load(f)
-with open(train_cfg_path) as f: train_cfg    = yaml.safe_load(f)
+with open(pair_cfg_path) as f: pairwise_cfg = yaml.safe_load(f)
+with open(train_cfg_path) as f: train_cfg = yaml.safe_load(f)
 cfg_pw = Namespace(**pairwise_cfg)
 cfg_tr = Namespace(**train_cfg)
 
-# ensure model outputs 3 coordinates
+cfg_pw.nlayers = 24
+cfg_tr.batch_size = 1
 cfg_pw.nclass = 3
 
-# vocabulary & tokenization
 vocab = {"A":0, "C":1, "G":2, "U":3}
-pad_id = len(vocab)          # 4
-cfg_pw.ntoken = pad_id + 1   # 5
+pad_id = len(vocab)
+cfg_pw.ntoken = pad_id + 1
 max_len = cfg_pw.max_len
 
 def tokenize(seq: str) -> torch.LongTensor:
@@ -97,29 +78,21 @@ def tokenize(seq: str) -> torch.LongTensor:
         ids = ids[:max_len]
     return torch.tensor(ids, dtype=torch.long)
 
-# Dataset & DataLoader
 class RNADataset(Dataset):
     def __init__(self, seqs_df: pd.DataFrame, coords_dict: dict):
-        self.seqs   = seqs_df.reset_index(drop=True)
+        self.seqs = seqs_df.reset_index(drop=True)
         self.coords = coords_dict
-
     def __len__(self) -> int:
         return len(self.seqs)
-
     def __getitem__(self, idx: int):
-        row     = self.seqs.iloc[idx]
-        seq_ids = row['seq_ids']
-        xyz     = self.coords[row['target_id']]
-        return seq_ids, xyz
+        row = self.seqs.iloc[idx]
+        return row['seq_ids'], self.coords[row['target_id']]
 
-def load_dataset(seq_path: str, label_path: str,
-                 batch_size: int, shuffle: bool=False):
-    seqs_df   = pd.read_csv(seq_path)
+def load_dataset(seq_path: str, label_path: str, batch_size: int, shuffle: bool=False):
+    seqs_df = pd.read_csv(seq_path)
     labels_df = pd.read_csv(label_path)
-
-    seqs_df['seq_ids']     = seqs_df['sequence'].map(tokenize)
+    seqs_df['seq_ids'] = seqs_df['sequence'].map(tokenize)
     labels_df['target_id'] = labels_df['ID'].str.rsplit('_', n=1).str[0]
-
     coords = {}
     for tid, grp in labels_df.groupby('target_id'):
         grp = grp.sort_values('resid')
@@ -130,45 +103,24 @@ def load_dataset(seq_path: str, label_path: str,
         else:
             xyz = xyz[:max_len]
         coords[tid] = torch.tensor(xyz, dtype=torch.float32)
-
     ds = RNADataset(seqs_df, coords)
-    loader = DataLoader(
-        ds,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=0,
-        pin_memory=shuffle
-    )
-    return loader
+    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=0, pin_memory=shuffle)
 
-train_loader = load_dataset(train_data_path, train_lbl_path,
-                            cfg_tr.batch_size, shuffle=True)
-val_loader   = load_dataset(valid_data_path, valid_lbl_path,
-                            cfg_tr.test_batch_size, shuffle=False)
+train_loader = load_dataset(train_data_path, train_lbl_path, cfg_tr.batch_size, shuffle=True)
+val_loader = load_dataset(valid_data_path, valid_lbl_path, cfg_tr.test_batch_size, shuffle=False)
 
-# device and model setup
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model  = RibonanzaNet(cfg_pw)
+model = RibonanzaNet(cfg_pw)
 if torch.cuda.device_count() > 1:
     logger.info(f"Using {torch.cuda.device_count()} GPUs via DataParallel")
     model = nn.DataParallel(model)
 model = model.to(device)
 
-# optimizer, scheduler, loss, scaler
-optimizer = optim.AdamW(
-    model.parameters(),
-    lr=cfg_tr.learning_rate,
-    weight_decay=cfg_tr.weight_decay
-)
-scheduler = optim.lr_scheduler.StepLR(
-    optimizer,
-    step_size=cfg_tr.lr_step,
-    gamma=cfg_tr.lr_gamma
-)
+optimizer = optim.AdamW(model.parameters(), lr=cfg_tr.learning_rate, weight_decay=cfg_tr.weight_decay)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg_tr.lr_step, gamma=cfg_tr.lr_gamma)
 criterion = nn.MSELoss()
 scaler = GradScaler('cuda')
 
-# resume from checkpoint
 start_epoch = 1
 if checkpoint_path:
     ckpt = torch.load(checkpoint_path, map_location=device)
@@ -179,56 +131,39 @@ if checkpoint_path:
 
 best_val = float('inf')
 
-# training loop
 for epoch in range(start_epoch, cfg_tr.epochs + 1):
     model.train()
     total_train = 0.0
-
     for seq_ids, coords_true in train_loader:
         seq_ids, coords_true = seq_ids.to(device), coords_true.to(device)
-        src_mask = torch.ones_like(seq_ids, dtype=torch.long, device=device)
-
+        src_mask = torch.ones_like(seq_ids, device=device)
         optimizer.zero_grad()
         with autocast('cuda'):
             pred = model(seq_ids, src_mask=src_mask)
             loss = criterion(pred, coords_true)
-
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         nn.utils.clip_grad_norm_(model.parameters(), cfg_tr.clip_grad_norm)
         scaler.step(optimizer)
         scaler.update()
-
         total_train += loss.item()
-
-    avg_train = total_train / len(train_loader)
-    writer.add_scalar('Loss/Train', avg_train, epoch)
-
+    writer.add_scalar('Loss/Train', total_train / len(train_loader), epoch)
     model.eval()
     total_val = 0.0
     with torch.no_grad():
         for seq_ids, coords_true in val_loader:
             seq_ids, coords_true = seq_ids.to(device), coords_true.to(device)
-            src_mask = torch.ones_like(seq_ids, dtype=torch.long, device=device)
+            src_mask = torch.ones_like(seq_ids, device=device)
             pred = model(seq_ids, src_mask=src_mask)
             total_val += criterion(pred, coords_true).item()
-
-    avg_val = total_val / len(val_loader)
-    writer.add_scalar('Loss/Val', avg_val, epoch)
-
-    logger.info(f"Epoch {epoch}/{cfg_tr.epochs} — Train: {avg_train:.4f} | Val: {avg_val:.4f}")
-
-    if avg_val < best_val:
-        best_val = avg_val
+    writer.add_scalar('Loss/Val', total_val / len(val_loader), epoch)
+    logger.info(f"Epoch {epoch}/{cfg_tr.epochs} — Train: {total_train/len(train_loader):.4f} | Val: {total_val/len(val_loader):.4f}")
+    if total_val / len(val_loader) < best_val:
+        best_val = total_val / len(val_loader)
         ckpt_file = os.path.join(save_dir, f'best_epoch{epoch}.pth')
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'val_loss': best_val
-        }, ckpt_file)
+        torch.save({'epoch': epoch, 'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(), 'val_loss': best_val}, ckpt_file)
         logger.info(f"Saved new best model to {ckpt_file}")
-
     scheduler.step()
 
 writer.close()
