@@ -1,5 +1,5 @@
 # DataLoader
-batch_size: 4        # 训练时的 batch size for parallel processing
+batch_size: 8        # 训练时的 batch size for parallel processing
 
 test_batch_size: 8     # 验证/测试时的 batch size
 

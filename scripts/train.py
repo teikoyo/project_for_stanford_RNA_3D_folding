@@ -119,7 +119,6 @@ model = model.to(device)
 optimizer = optim.AdamW(model.parameters(), lr=cfg_tr.learning_rate, weight_decay=cfg_tr.weight_decay)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=cfg_tr.lr_step, gamma=cfg_tr.lr_gamma)
 criterion = nn.MSELoss()
-scaler = GradScaler('cuda')
 
 start_epoch = 1
 if checkpoint_path:
@@ -138,14 +137,11 @@ for epoch in range(start_epoch, cfg_tr.epochs + 1):
         seq_ids, coords_true = seq_ids.to(device), coords_true.to(device)
         src_mask = torch.ones_like(seq_ids, device=device)
         optimizer.zero_grad()
-        with autocast('cuda'):
-            pred = model(seq_ids, src_mask=src_mask)
-            loss = criterion(pred, coords_true)
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
+        pred = model(seq_ids, src_mask=src_mask)
+        loss = criterion(pred, coords_true)
+        loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), cfg_tr.clip_grad_norm)
-        scaler.step(optimizer)
-        scaler.update()
+        optimizer.step()
         total_train += loss.item()
     writer.add_scalar('Loss/Train', total_train / len(train_loader), epoch)
     model.eval()
